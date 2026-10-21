@@ -1,12 +1,13 @@
 // Human Pace — mede o pace atual por GPS (ver docs/adr/0002)
 
-const WINDOW_MS = 25000;        // janela do pace atual
+const WINDOW_MS = 15000;        // janela do pace atual
 const MAX_ACCURACY_M = 25;      // descarta leituras com precisão pior que isso
 const MAX_SPEED_MS = 9;         // ~32 km/h: acima disso é salto de GPS, não corredor
 const MIN_SPEED_MS = 3 / 3.6;   // abaixo de 3 km/h mostra --:--
 const MIN_SPAN_MS = 5000;       // tempo mínimo de dados na janela para calcular
 const STALE_MS = 10000;         // sem leitura há 10 s = sinal perdido
 const LONG_PRESS_MS = 3000;     // toque longo para encerrar
+const HOLD_MS = 10000;          // segura o último pace válido antes de mostrar --:--
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,6 +17,7 @@ let fixes = [];           // leituras aceitas dentro da janela: {t, lat, lon, ac
 let lastAccepted = null;
 let totalDistance = 0;    // metros, só trechos em movimento
 let currentSpeed = null;  // m/s suavizado, null = sem dado
+let lastValidPace = null; // {text, at}: último pace mostrado, para segurar em falhas curtas
 const stats = { total: 0, rejectedAcc: 0, rejectedJump: 0, lastAcc: null, lastRawSpeed: null, lastFixAt: 0, source: "-" };
 
 // ---------- Cálculo ----------
@@ -99,7 +101,19 @@ function render() {
   status.classList.toggle("lost", !!lastAccepted && stale);
   $("gps-text").textContent = lastAccepted && stale ? "sinal GPS perdido" : "buscando GPS";
 
-  $("pace").textContent = stale ? "--:--" : formatPace(currentSpeed);
+  // Uma falha curta (GPS piscando, leitura ruim) não derruba o número: segura o último
+  // pace válido por HOLD_MS. Só depois disso mostra --:--.
+  const pace = stale ? "--:--" : formatPace(currentSpeed);
+  let holding = false;
+  if (pace !== "--:--") {
+    lastValidPace = { text: pace, at: Date.now() };
+    $("pace").textContent = pace;
+  } else if (lastValidPace && Date.now() - lastValidPace.at < HOLD_MS) {
+    holding = true;
+    $("pace").textContent = lastValidPace.text;
+  } else {
+    $("pace").textContent = "--:--";
+  }
   $("distance").textContent = (totalDistance / 1000).toFixed(2);
 
   const diag = $("diag");
@@ -114,6 +128,7 @@ function render() {
       `vel. bruta km/h: ${stats.lastRawSpeed == null ? "—" : fmt(stats.lastRawSpeed * 3.6)}`,
       `vel. janela km/h:${currentSpeed == null ? "—" : fmt(currentSpeed * 3.6)}`,
       `fonte:           ${stats.source}`,
+      `segurando:       ${holding ? "sim" : "não"}`,
       `última leitura:  ${stats.lastFixAt ? ((Date.now() - stats.lastFixAt) / 1000).toFixed(0) + " s atrás" : "—"}`,
       `wake lock:       ${wakeLock ? "ativo" : "inativo"}`,
       stats.lastError ? `erro: ${stats.lastError}` : "",
@@ -149,6 +164,7 @@ async function startRun() {
   lastAccepted = null;
   totalDistance = 0;
   currentSpeed = null;
+  lastValidPace = null;
   Object.assign(stats, { total: 0, rejectedAcc: 0, rejectedJump: 0, lastAcc: null, lastRawSpeed: null, lastFixAt: 0, lastError: null });
 
   watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {

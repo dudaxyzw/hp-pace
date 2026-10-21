@@ -4,7 +4,7 @@
   --fg: #fff;
   --accent: #e4002b;
   --muted: #777;
-  --ghost: rgba(255, 255, 255, 0.07);
+  --ghost: rgba(228, 0, 43, 0.12);
 }
 
 @font-face {
@@ -80,7 +80,7 @@ html, body {
   inset: 0;
   color: var(--ghost);
 }
-#pace { position: relative; }
+#pace { position: relative; color: var(--accent); }
 
 .unit {
   margin-top: 2vh;
