@@ -136,7 +136,7 @@ html, body {
 
 /* Tira vermelha oficial da marca (assets/tira.svg, vertical 33×88) */
 .tira {
-  height: 9vh;
+  height: 18vh;
   width: auto;
   margin-top: 5vh;
 }
