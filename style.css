@@ -1,0 +1,143 @@
+/* Placeholders da marca: trocar quando a agência mandar a arte */
+:root {
+  --bg: #000;
+  --fg: #fff;
+  --accent: #e4002b;
+  --muted: #777;
+  --ghost: rgba(255, 255, 255, 0.07);
+}
+
+@font-face {
+  font-family: "DSEG7";
+  src: url("fonts/DSEG7Classic-Bold.woff2") format("woff2");
+  font-display: block;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.hidden { display: none !important; }
+
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Tela inicial */
+#start h1 {
+  font-size: 8vmin;
+  letter-spacing: 0.15em;
+  margin-bottom: 6vmin;
+}
+#btn-start {
+  font: inherit;
+  font-size: 6vmin;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 3vmin 10vmin;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--fg);
+}
+.hint {
+  margin-top: 4vmin;
+  color: var(--muted);
+  font-size: 3vmin;
+  text-align: center;
+  padding: 0 16px;
+}
+
+/* Tela de corrida */
+.pace-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pace {
+  position: relative;
+  font-family: "DSEG7", monospace;
+  /* Paisagem: limita pela largura (4 dígitos) e pela altura */
+  font-size: min(21vw, 52vh);
+  line-height: 1;
+}
+.pace .ghost {
+  position: absolute;
+  inset: 0;
+  color: var(--ghost);
+}
+#pace { position: relative; }
+
+.unit {
+  margin-top: 2vh;
+  font-size: max(16px, 4.5vh);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: var(--accent);
+}
+
+.distance {
+  position: absolute;
+  right: 3vw;
+  bottom: 3vh;
+  font-size: max(14px, 4vh);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+#distance { font-family: "DSEG7", monospace; color: var(--fg); }
+
+.status {
+  position: absolute;
+  left: 3vw;
+  top: 3vh;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: max(12px, 2.8vh);
+  color: var(--muted);
+}
+.status .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #c90;
+}
+.status.ok .dot { background: #2c2; }
+.status.ok #gps-text { display: none; }
+.status.lost .dot { background: var(--accent); }
+
+/* Barra que enche durante o toque longo para encerrar */
+#stop-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 6px;
+  width: 0;
+  background: var(--accent);
+}
+
+#diag {
+  position: absolute;
+  left: 3vw;
+  top: 10vh;
+  padding: 12px;
+  background: rgba(30, 30, 30, 0.9);
+  font: 13px/1.5 ui-monospace, monospace;
+  color: #0f0;
+  border-radius: 6px;
+}
