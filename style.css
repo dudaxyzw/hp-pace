@@ -91,6 +91,14 @@ html, body {
   padding: 0 16px;
 }
 
+.version {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  font-size: 11px;
+  color: #444;
+}
+
 /* Tela de corrida */
 .pace-wrap {
   display: flex;

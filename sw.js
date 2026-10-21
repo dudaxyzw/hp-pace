@@ -1,6 +1,6 @@
 // Guarda o app inteiro em cache para funcionar sem internet.
-// A cada atualização do app, mude a versão abaixo.
-const CACHE = "human-pace-v7";
+// A cada atualização do app, mude a versão aqui e em APP_VERSION no app.js.
+const CACHE = "human-pace-v8";
 const FILES = [
   "./",
   "index.html",
@@ -14,8 +14,9 @@ const FILES = [
   "icons/icon-512.png",
 ];
 
+// cache: "reload" ignora o cache HTTP do navegador, senão a versão nova pode salvar arquivos antigos
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" })))));
   self.skipWaiting();
 });
 
