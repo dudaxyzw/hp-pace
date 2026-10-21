@@ -8,7 +8,7 @@
   --muted: #777;
   --ghost: rgba(220, 29, 56, 0.12); /* segmentos apagados: mesmo tom do aceso, 12% */
   /* Brilho leve de display aceso. Para desligar: --glow: none; */
-  --glow: 0 0 0.03em rgba(220, 29, 56, 0.9), 0 0 0.2em rgba(220, 29, 56, 0.35);
+  --glow: 0 0 0.04em rgba(220, 29, 56, 1), 0 0 0.25em rgba(220, 29, 56, 0.5), 0 0 0.6em rgba(220, 29, 56, 0.25);
 }
 
 @font-face {
@@ -135,10 +135,11 @@ html, body {
 .unit { margin-top: 3vh; }
 
 /* Tira vermelha oficial da marca (assets/tira.svg, vertical 33×88) */
+/* Espaço igual acima do PACE, entre /KM e a tira, e abaixo da tira */
+#run { justify-content: space-evenly; }
 .tira {
   height: 18vh;
   width: auto;
-  margin-top: 5vh;
 }
 
 .distance {
