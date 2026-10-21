@@ -1,24 +1,46 @@
 // Human Pace — mede o pace atual por GPS (ver docs/adr/0002)
+//
+// Pipeline, a cada leitura do GPS (~1 por segundo):
+//   1. filtra leituras ruins (precisão, saltos)
+//   2. amostra de velocidade: Doppler do GPS, ou distância/tempo se o aparelho não informa
+//   3. mediana das últimas amostras: tira picos isolados sem atrasar mudança real
+//   4. One Euro Filter: suaviza forte quando estável, solta quando o ritmo muda
+//   5. detecção de parada à parte: abaixo do limite por N leituras = parado na hora
 
-const WINDOW_MS = 15000;        // janela do pace atual
+// ---- Parâmetros ajustáveis ----
+const MEDIAN_N = 5;             // amostras da mediana (anti-pico)
+const MIN_SAMPLES = 3;          // amostras mínimas para mostrar o primeiro pace
+const EURO_MIN_CUTOFF = 0.05;   // Hz. Menor = mais estável quando o ritmo está constante
+const EURO_BETA = 0.7;          // Maior = reage mais rápido quando o ritmo muda
+const EURO_D_CUTOFF = 1.0;      // Hz. Suavização da taxa de variação (raramente mexer)
+const STOP_SPEED_MS = 3 / 3.6;  // abaixo de 3 km/h = parado
+const STOP_CONFIRM = 2;         // leituras seguidas abaixo do limite para mostrar parado
 const MAX_ACCURACY_M = 25;      // descarta leituras com precisão pior que isso
 const MAX_SPEED_MS = 9;         // ~32 km/h: acima disso é salto de GPS, não corredor
-const MIN_SPEED_MS = 3 / 3.6;   // abaixo de 3 km/h mostra --:--
-const MIN_SPAN_MS = 5000;       // tempo mínimo de dados na janela para calcular
-const STALE_MS = 10000;         // sem leitura há 10 s = sinal perdido
+const SIGNAL_GAP_MS = 3000;     // sem leitura boa há mais que isso = falha de sinal
+const HOLD_MS = 10000;          // em falha de sinal, segura o último pace por até isso
 const LONG_PRESS_MS = 3000;     // toque longo para encerrar
-const HOLD_MS = 10000;          // segura o último pace válido antes de mostrar --:--
 
 const $ = (id) => document.getElementById(id);
 
 let watchId = null;
 let wakeLock = null;
-let fixes = [];           // leituras aceitas dentro da janela: {t, lat, lon, acc, speed}
-let lastAccepted = null;
+let lastAccepted = null;  // última leitura aceita: {t, lat, lon, acc, speed}
+let samples = [];         // últimas amostras de velocidade (m/s)
+let stopped = true;
+let euro = null;          // estado do One Euro Filter
 let totalDistance = 0;    // metros, só trechos em movimento
-let currentSpeed = null;  // m/s suavizado, null = sem dado
-let lastValidPace = null; // {text, at}: último pace mostrado, para segurar em falhas curtas
-const stats = { total: 0, rejectedAcc: 0, rejectedJump: 0, lastAcc: null, lastRawSpeed: null, lastFixAt: 0, source: "-" };
+let currentSpeed = null;  // m/s filtrado, null = parado ou sem dado
+let lastShownPace = "--:--";
+const stats = {};
+
+function resetStats() {
+  Object.assign(stats, {
+    total: 0, rejectedAcc: 0, rejectedJump: 0, lastAcc: null, lastSample: null,
+    median: null, lastFixAt: 0, lastAcceptedAt: 0, source: "-", lastError: null,
+  });
+}
+resetStats();
 
 // ---------- Cálculo ----------
 
@@ -31,23 +53,30 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// Velocidade média na janela. Prefere a velocidade Doppler que o próprio GPS informa
-// (bem mais precisa que a posição); se o aparelho não informa, usa distância/tempo.
-function windowSpeed() {
-  if (fixes.length < 2) return null;
-  const span = fixes[fixes.length - 1].t - fixes[0].t;
-  if (span < MIN_SPAN_MS) return null;
+function median(arr) {
+  const s = [...arr].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
 
-  const withSpeed = fixes.filter((f) => f.speed != null && !Number.isNaN(f.speed));
-  if (withSpeed.length >= fixes.length / 2) {
-    stats.source = "doppler";
-    return withSpeed.reduce((s, f) => s + f.speed, 0) / withSpeed.length;
+// One Euro Filter (Casiez et al., 2012): a frequência de corte sobe junto com a
+// velocidade de mudança do sinal. Estável = filtra muito; mudando = quase sem atraso.
+function smoothingFactor(dt, cutoff) {
+  const tau = 1 / (2 * Math.PI * cutoff);
+  return 1 / (1 + tau / dt);
+}
+
+function euroFilter(x, t) {
+  if (!euro) {
+    euro = { x, dx: 0, t };
+    return x;
   }
-
-  stats.source = "posição";
-  let dist = 0;
-  for (let i = 1; i < fixes.length; i++) dist += haversine(fixes[i - 1], fixes[i]);
-  return dist / (span / 1000);
+  const dt = Math.max((t - euro.t) / 1000, 0.1);
+  const aD = smoothingFactor(dt, EURO_D_CUTOFF);
+  const dx = aD * ((x - euro.x) / dt) + (1 - aD) * euro.dx;
+  const a = smoothingFactor(dt, EURO_MIN_CUTOFF + EURO_BETA * Math.abs(dx));
+  euro = { x: a * x + (1 - a) * euro.x, dx, t };
+  return euro.x;
 }
 
 function onPosition(pos) {
@@ -55,25 +84,51 @@ function onPosition(pos) {
   const fix = { t: pos.timestamp, lat: c.latitude, lon: c.longitude, acc: c.accuracy, speed: c.speed };
   stats.total++;
   stats.lastAcc = c.accuracy;
-  stats.lastRawSpeed = c.speed;
   stats.lastFixAt = Date.now();
 
   if (c.accuracy > MAX_ACCURACY_M) { stats.rejectedAcc++; return; }
 
   let segment = 0;
+  let sample = null;
   if (lastAccepted) {
     const dt = (fix.t - lastAccepted.t) / 1000;
     if (dt <= 0) return;
     segment = haversine(lastAccepted, fix);
     if (segment / dt > MAX_SPEED_MS) { stats.rejectedJump++; return; }
+    sample = segment / dt;
+    stats.source = "posição";
+  }
+  if (c.speed != null && !Number.isNaN(c.speed)) {
+    sample = c.speed;
+    stats.source = "doppler";
   }
 
   lastAccepted = fix;
-  fixes.push(fix);
-  while (fixes.length && fix.t - fixes[0].t > WINDOW_MS) fixes.shift();
+  stats.lastAcceptedAt = Date.now();
+  if (sample == null) return;
 
-  currentSpeed = windowSpeed();
-  if (currentSpeed != null && currentSpeed >= MIN_SPEED_MS) totalDistance += segment;
+  stats.lastSample = sample;
+  samples.push(sample);
+  if (samples.length > MEDIAN_N) samples.shift();
+  if (samples.length < MIN_SAMPLES) return;
+
+  const med = median(samples);
+  stats.median = med;
+
+  // Parada: as últimas STOP_CONFIRM amostras brutas abaixo do limite. Não passa pelo filtro.
+  const recent = samples.slice(-STOP_CONFIRM);
+  const nowStopped = recent.length === STOP_CONFIRM && recent.every((s) => s < STOP_SPEED_MS);
+
+  if (nowStopped || med < STOP_SPEED_MS) {
+    stopped = true;
+    currentSpeed = null;
+    euro = null; // ao voltar a correr, o filtro começa do ritmo novo, sem rampa desde zero
+    return;
+  }
+
+  stopped = false;
+  currentSpeed = euroFilter(med, fix.t);
+  totalDistance += segment;
 }
 
 function onPositionError(err) {
@@ -87,7 +142,7 @@ function onPositionError(err) {
 // ---------- Tela ----------
 
 function formatPace(speed) {
-  if (speed == null || speed < MIN_SPEED_MS) return "--:--";
+  if (speed == null || speed < STOP_SPEED_MS) return "--:--";
   const secPerKm = Math.round(1000 / speed);
   const m = Math.floor(secPerKm / 60);
   const s = String(secPerKm % 60).padStart(2, "0");
@@ -95,42 +150,44 @@ function formatPace(speed) {
 }
 
 function render() {
-  const stale = Date.now() - stats.lastFixAt > STALE_MS;
-  const status = $("gps-status");
-  status.classList.toggle("ok", !!lastAccepted && !stale);
-  status.classList.toggle("lost", !!lastAccepted && stale);
-  $("gps-text").textContent = lastAccepted && stale ? "sinal GPS perdido" : "buscando GPS";
+  const sinceGood = Date.now() - stats.lastAcceptedAt;
+  const signalOk = !!lastAccepted && sinceGood <= SIGNAL_GAP_MS;
+  const lost = !!lastAccepted && sinceGood > HOLD_MS;
 
-  // Uma falha curta (GPS piscando, leitura ruim) não derruba o número: segura o último
-  // pace válido por HOLD_MS. Só depois disso mostra --:--.
-  const pace = stale ? "--:--" : formatPace(currentSpeed);
+  // A retenção vale só para falha de sinal. Parada real aparece na hora.
   let holding = false;
-  if (pace !== "--:--") {
-    lastValidPace = { text: pace, at: Date.now() };
-    $("pace").textContent = pace;
-  } else if (lastValidPace && Date.now() - lastValidPace.at < HOLD_MS) {
-    holding = true;
-    $("pace").textContent = lastValidPace.text;
+  if (signalOk) {
+    lastShownPace = formatPace(currentSpeed);
+  } else if (!lastAccepted || lost) {
+    lastShownPace = "--:--";
   } else {
-    $("pace").textContent = "--:--";
+    holding = true;
   }
+  $("pace").textContent = lastShownPace;
+
+  const status = $("gps-status");
+  status.classList.toggle("ok", !!lastAccepted && !lost);
+  status.classList.toggle("lost", lost);
+  $("gps-text").textContent = lost ? "sinal GPS perdido" : "buscando GPS";
+
   $("distance").textContent = (totalDistance / 1000).toFixed(2);
 
   const diag = $("diag");
   if (!diag.classList.contains("hidden")) {
-    const fmt = (v, d = 1) => (v == null ? "—" : v.toFixed(d));
+    const kmh = (v) => (v == null ? "—" : (v * 3.6).toFixed(1));
     diag.textContent = [
-      `leituras:        ${stats.total}`,
-      `rejeitadas acc:  ${stats.rejectedAcc}`,
-      `rejeitadas salto:${stats.rejectedJump}`,
-      `na janela:       ${fixes.length}`,
-      `precisão (m):    ${fmt(stats.lastAcc)}`,
-      `vel. bruta km/h: ${stats.lastRawSpeed == null ? "—" : fmt(stats.lastRawSpeed * 3.6)}`,
-      `vel. janela km/h:${currentSpeed == null ? "—" : fmt(currentSpeed * 3.6)}`,
-      `fonte:           ${stats.source}`,
-      `segurando:       ${holding ? "sim" : "não"}`,
-      `última leitura:  ${stats.lastFixAt ? ((Date.now() - stats.lastFixAt) / 1000).toFixed(0) + " s atrás" : "—"}`,
-      `wake lock:       ${wakeLock ? "ativo" : "inativo"}`,
+      `leituras:         ${stats.total}`,
+      `rejeitadas acc:   ${stats.rejectedAcc}`,
+      `rejeitadas salto: ${stats.rejectedJump}`,
+      `precisão (m):     ${stats.lastAcc == null ? "—" : stats.lastAcc.toFixed(1)}`,
+      `fonte:            ${stats.source}`,
+      `amostra km/h:     ${kmh(stats.lastSample)}`,
+      `mediana km/h:     ${kmh(stats.median)}`,
+      `filtrada km/h:    ${kmh(currentSpeed)}`,
+      `parado:           ${stopped ? "sim" : "não"}`,
+      `segurando:        ${holding ? "sim" : "não"}`,
+      `última leitura:   ${stats.lastFixAt ? ((Date.now() - stats.lastFixAt) / 1000).toFixed(0) + " s atrás" : "—"}`,
+      `wake lock:        ${wakeLock ? "ativo" : "inativo"}`,
       stats.lastError ? `erro: ${stats.lastError}` : "",
     ].join("\n");
   }
@@ -160,12 +217,14 @@ async function startRun() {
   } catch { /* celular ou navegador sem suporte: segue sem travar */ }
   requestWakeLock();
 
-  fixes = [];
   lastAccepted = null;
+  samples = [];
+  stopped = true;
+  euro = null;
   totalDistance = 0;
   currentSpeed = null;
-  lastValidPace = null;
-  Object.assign(stats, { total: 0, rejectedAcc: 0, rejectedJump: 0, lastAcc: null, lastRawSpeed: null, lastFixAt: 0, lastError: null });
+  lastShownPace = "--:--";
+  resetStats();
 
   watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
     enableHighAccuracy: true,
