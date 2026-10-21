@@ -7,7 +7,7 @@
 //   4. One Euro Filter: suaviza forte quando estável, solta quando o ritmo muda
 //   5. detecção de parada à parte: abaixo do limite por N leituras = parado na hora
 
-const APP_VERSION = "v9"; // mudar junto com CACHE no sw.js
+const APP_VERSION = "v10"; // mudar junto com CACHE no sw.js
 
 // ---- Parâmetros ajustáveis ----
 const MEDIAN_N = 5;             // amostras da mediana (anti-pico)

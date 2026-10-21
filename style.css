@@ -134,9 +134,10 @@ html, body {
 .label { margin-bottom: 3vh; }
 .unit { margin-top: 3vh; }
 
-/* Tira vermelha da marca (placeholder em assets/tira.svg) */
+/* Tira vermelha oficial da marca (assets/tira.svg, vertical 33×88) */
 .tira {
-  width: 60vw;
+  height: 9vh;
+  width: auto;
   margin-top: 5vh;
 }
 

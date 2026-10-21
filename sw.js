@@ -1,6 +1,6 @@
 // Guarda o app inteiro em cache para funcionar sem internet.
 // A cada atualização do app, mude a versão aqui e em APP_VERSION no app.js.
-const CACHE = "human-pace-v9";
+const CACHE = "human-pace-v10";
 const FILES = [
   "./",
   "index.html",
