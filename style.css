@@ -2,9 +2,10 @@
 :root {
   --bg: #000;
   --fg: #fff;
-  --accent: #e4002b;
+  --accent: #dc1d38;      /* vermelho principal Michelob */
+  --accent-dark: #b21f3e; /* vermelho fechado Michelob (reserva para a fase visual) */
   --muted: #777;
-  --ghost: rgba(228, 0, 43, 0.12);
+  --ghost: rgba(220, 29, 56, 0.12); /* segmentos apagados: mesmo tom do aceso, 12% */
 }
 
 @font-face {
