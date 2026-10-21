@@ -7,7 +7,7 @@
 //   4. One Euro Filter: suaviza forte quando estável, solta quando o ritmo muda
 //   5. detecção de parada à parte: abaixo do limite por N leituras = parado na hora
 
-const APP_VERSION = "v12"; // mudar junto com CACHE no sw.js
+const APP_VERSION = "v13"; // mudar junto com CACHE no sw.js
 
 // ---- Parâmetros ajustáveis ----
 const MEDIAN_N = 5;             // amostras da mediana (anti-pico)
@@ -179,7 +179,7 @@ function render() {
   const diag = $("diag");
   if (!diag.classList.contains("hidden")) {
     const kmh = (v) => (v == null ? "—" : (v * 3.6).toFixed(1));
-    diag.textContent = [
+    $("diag-text").textContent = [
       `leituras:         ${stats.total}`,
       `rejeitadas acc:   ${stats.rejectedAcc}`,
       `rejeitadas salto: ${stats.rejectedJump}`,
@@ -251,6 +251,21 @@ function stopRun() {
 
 $("btn-start").addEventListener("click", startRun);
 setInterval(() => { if (watchId != null) render(); }, 1000);
+
+// Brilho liga/desliga pelo menu de diagnóstico. A escolha fica salva neste aparelho.
+function setGlow(on) {
+  document.body.classList.toggle("no-glow", !on);
+  $("btn-glow").textContent = `brilho: ${on ? "ligado" : "desligado"}`;
+  try { localStorage.setItem("glow", on ? "1" : "0"); } catch { /* sem storage: vale só nesta sessão */ }
+}
+let glowPref = "1";
+try { glowPref = localStorage.getItem("glow") ?? "1"; } catch { /* usa o padrão */ }
+setGlow(glowPref === "1");
+
+// Toques no botão não contam como toque duplo nem toque longo da tela
+$("btn-glow").addEventListener("pointerdown", (e) => e.stopPropagation());
+$("btn-glow").addEventListener("pointerup", (e) => e.stopPropagation());
+$("btn-glow").addEventListener("click", () => setGlow(document.body.classList.contains("no-glow")));
 
 // Toque duplo: painel de diagnóstico. Toque longo: encerrar.
 let lastTap = 0;

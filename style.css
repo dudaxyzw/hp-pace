@@ -138,7 +138,7 @@ html, body {
 /* Espaço igual acima do PACE, entre /KM e a tira, e abaixo da tira */
 #run { justify-content: space-evenly; }
 .tira {
-  height: 18vh;
+  height: 22vh;
   width: auto;
 }
 
@@ -183,6 +183,9 @@ html, body {
   background: var(--accent);
 }
 
+/* Brilho desligado pelo menu de diagnóstico */
+body.no-glow { --glow: none; }
+
 #diag {
   position: absolute;
   left: 3vw;
@@ -192,4 +195,14 @@ html, body {
   font: 13px/1.5 ui-monospace, monospace;
   color: #0f0;
   border-radius: 6px;
+}
+#diag pre { font: inherit; }
+.diag-btn {
+  font: inherit;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border: 1px solid #0f0;
+  border-radius: 4px;
+  background: transparent;
+  color: #0f0;
 }
