@@ -164,6 +164,8 @@ function render() {
     holding = true;
   }
   $("pace").textContent = lastShownPace;
+  // Segmentos apagados no mesmo formato do número (8:88 ou 88:88), para alinhar dígito a dígito
+  $("ghost").textContent = lastShownPace.replace(/[0-9-]/g, "8");
 
   const status = $("gps-status");
   status.classList.toggle("ok", !!lastAccepted && !lost);

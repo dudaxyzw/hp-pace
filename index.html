@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#000000">
+  <meta name="theme-color" content="#ffffff">
   <title>Human Pace</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
@@ -12,7 +12,8 @@
 <body>
   <!-- Tela inicial: a equipe toca "Iniciar" antes de prender o tablet no colete -->
   <section id="start" class="screen">
-    <h1>HUMAN PACE</h1>
+    <h1>HUMAN <b>PACE</b></h1>
+    <div class="rule"></div>
     <button id="btn-start">INICIAR</button>
     <p id="start-msg" class="hint">Permita o acesso à localização quando o navegador pedir.</p>
   </section>
@@ -22,11 +23,12 @@
     <div id="gps-status" class="status"><span class="dot"></span><span id="gps-text">buscando GPS</span></div>
 
     <div class="pace-wrap">
+      <div class="label">PACE</div>
       <div class="pace">
-        <span class="ghost">88:88</span>
+        <span id="ghost" class="ghost">88:88</span>
         <span id="pace">--:--</span>
       </div>
-      <div class="unit">MIN/KM</div>
+      <div class="unit">/KM</div>
     </div>
 
     <div class="distance"><span id="distance">0.00</span> KM</div>

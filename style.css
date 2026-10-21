@@ -4,6 +4,8 @@
   --fg: #fff;
   --accent: #dc1d38;      /* vermelho principal Michelob */
   --accent-dark: #b21f3e; /* vermelho fechado Michelob (reserva para a fase visual) */
+  --navy: #0a2240;        /* azul aproximado da Michelob Ultra: confirmar no guideline */
+  --paper: #fff;
   --muted: #777;
   --ghost: rgba(220, 29, 56, 0.12); /* segmentos apagados: mesmo tom do aceso, 12% */
 }
@@ -13,6 +15,18 @@
   src: url("fonts/DSEG7Classic-Bold.woff2") format("woff2");
   font-display: block;
 }
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/barlow-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/barlow-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: block;
+}
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -20,7 +34,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--fg);
-  font-family: system-ui, sans-serif;
+  font-family: "Barlow", system-ui, sans-serif;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -38,27 +52,42 @@ html, body {
   justify-content: center;
 }
 
-/* Tela inicial */
+/* Tela inicial: branca, minimalista */
+#start {
+  background: var(--paper);
+  color: var(--navy);
+}
 #start h1 {
-  font-size: 8vmin;
-  letter-spacing: 0.15em;
-  margin-bottom: 6vmin;
+  font-size: max(28px, 7vmin);
+  font-weight: 400;
+  letter-spacing: 0.32em;
+  margin-right: -0.32em; /* compensa o espaçamento da última letra para centralizar */
+}
+#start h1 b { font-weight: 600; }
+.rule {
+  width: 48px;
+  height: 3px;
+  margin: 4vmin 0 7vmin;
+  background: var(--accent);
 }
 #btn-start {
   font: inherit;
-  font-size: 6vmin;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  padding: 3vmin 10vmin;
+  font-size: max(15px, 2.8vmin);
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  padding: 2.4vmin 7vmin 2.4vmin calc(7vmin + 0.3em);
   border: none;
-  border-radius: 999px;
+  border-radius: 2px;
   background: var(--accent);
-  color: var(--fg);
+  color: var(--paper);
 }
+#btn-start:active { background: var(--accent-dark); }
 .hint {
-  margin-top: 4vmin;
-  color: var(--muted);
-  font-size: 3vmin;
+  position: absolute;
+  bottom: 5vmin;
+  color: #8a8f98;
+  font-size: max(12px, 2vmin);
+  letter-spacing: 0.04em;
   text-align: center;
   padding: 0 16px;
 }
@@ -73,7 +102,7 @@ html, body {
   position: relative;
   font-family: "DSEG7", monospace;
   /* Paisagem: limita pela largura (4 dígitos) e pela altura */
-  font-size: min(21vw, 52vh);
+  font-size: min(21vw, 44vh);
   line-height: 1;
 }
 .pace .ghost {
@@ -83,21 +112,25 @@ html, body {
 }
 #pace { position: relative; color: var(--accent); }
 
+/* Rótulos no estilo Strava: PACE em cima, /KM embaixo */
+.label,
 .unit {
-  margin-top: 2vh;
-  font-size: max(16px, 4.5vh);
-  font-weight: 700;
+  font-size: max(16px, 5vh);
+  font-weight: 600;
   letter-spacing: 0.3em;
-  color: var(--accent);
+  margin-right: -0.3em;
+  color: var(--fg);
 }
+.label { margin-bottom: 4vh; }
+.unit { margin-top: 3vh; }
 
 .distance {
   position: absolute;
   right: 3vw;
   bottom: 3vh;
   font-size: max(14px, 4vh);
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-weight: 600;
+  letter-spacing: 0.15em;
   color: var(--muted);
 }
 #distance { font-family: "DSEG7", monospace; color: var(--fg); }
