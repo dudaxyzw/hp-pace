@@ -7,6 +7,8 @@
   --navy: #0a2240;        /* azul aproximado da Michelob Ultra: confirmar no guideline */
   --muted: #777;
   --ghost: rgba(220, 29, 56, 0.12); /* segmentos apagados: mesmo tom do aceso, 12% */
+  /* Brilho leve de display aceso. Para desligar: --glow: none; */
+  --glow: 0 0 0.03em rgba(220, 29, 56, 0.9), 0 0 0.2em rgba(220, 29, 56, 0.35);
 }
 
 @font-face {
@@ -117,30 +119,32 @@ html, body {
   inset: 0;
   color: var(--ghost);
 }
-#pace { position: relative; color: var(--accent); }
+#pace { position: relative; color: var(--accent); text-shadow: var(--glow); }
 
-/* Rótulos no estilo Strava. Hierarquia: número > PACE > /KM */
+/* Rótulos no estilo Strava: PACE e /KM no mesmo tamanho, abaixo do número */
 .label,
 .unit {
+  font-size: max(32px, min(12vw, 7vh));
   font-weight: 600;
   letter-spacing: 0.3em;
   margin-right: -0.3em;
-  color: var(--fg);
+  color: var(--accent);
+  text-shadow: var(--glow);
 }
-.label {
-  font-size: max(28px, 9vw);
-  margin-bottom: 3vh;
-}
-.unit {
-  font-size: max(18px, 5vw);
-  margin-top: 3vh;
+.label { margin-bottom: 3vh; }
+.unit { margin-top: 3vh; }
+
+/* Tira vermelha da marca (placeholder em assets/tira.svg) */
+.tira {
+  width: 60vw;
+  margin-top: 5vh;
 }
 
 .distance {
   position: absolute;
   right: 3vw;
   bottom: 3vh;
-  font-size: max(14px, 4vh);
+  font-size: max(11px, 1.6vh);
   font-weight: 600;
   letter-spacing: 0.15em;
   color: var(--muted);
