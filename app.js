@@ -215,7 +215,7 @@ async function startRun() {
   }
   try {
     await document.documentElement.requestFullscreen();
-    await screen.orientation.lock("landscape");
+    await screen.orientation.lock("portrait");
   } catch { /* celular ou navegador sem suporte: segue sem travar */ }
   requestWakeLock();
 

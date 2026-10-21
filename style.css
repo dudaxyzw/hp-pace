@@ -5,7 +5,6 @@
   --accent: #dc1d38;      /* vermelho principal Michelob */
   --accent-dark: #b21f3e; /* vermelho fechado Michelob (reserva para a fase visual) */
   --navy: #0a2240;        /* azul aproximado da Michelob Ultra: confirmar no guideline */
-  --paper: #fff;
   --muted: #777;
   --ghost: rgba(220, 29, 56, 0.12); /* segmentos apagados: mesmo tom do aceso, 12% */
 }
@@ -52,10 +51,10 @@ html, body {
   justify-content: center;
 }
 
-/* Tela inicial: branca, minimalista */
+/* Tela inicial: preta, minimalista */
 #start {
-  background: var(--paper);
-  color: var(--navy);
+  background: var(--bg);
+  color: var(--fg);
 }
 #start h1 {
   font-size: max(28px, 7vmin);
@@ -79,7 +78,7 @@ html, body {
   border: none;
   border-radius: 2px;
   background: var(--accent);
-  color: var(--paper);
+  color: var(--fg);
 }
 #btn-start:active { background: var(--accent-dark); }
 .hint {
@@ -101,8 +100,8 @@ html, body {
 .pace {
   position: relative;
   font-family: "DSEG7", monospace;
-  /* Paisagem: limita pela largura (4 dígitos) e pela altura */
-  font-size: min(21vw, 44vh);
+  /* Retrato: limita pela largura ("88:88" ocupa ~3,3em) e pela altura */
+  font-size: min(27vw, 40vh);
   line-height: 1;
 }
 .pace .ghost {
@@ -112,17 +111,22 @@ html, body {
 }
 #pace { position: relative; color: var(--accent); }
 
-/* Rótulos no estilo Strava: PACE em cima, /KM embaixo */
+/* Rótulos no estilo Strava. Hierarquia: número > PACE > /KM */
 .label,
 .unit {
-  font-size: max(16px, 5vh);
   font-weight: 600;
   letter-spacing: 0.3em;
   margin-right: -0.3em;
   color: var(--fg);
 }
-.label { margin-bottom: 4vh; }
-.unit { margin-top: 3vh; }
+.label {
+  font-size: max(28px, 9vw);
+  margin-bottom: 3vh;
+}
+.unit {
+  font-size: max(18px, 5vw);
+  margin-top: 3vh;
+}
 
 .distance {
   position: absolute;
