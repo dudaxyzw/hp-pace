@@ -7,7 +7,7 @@
 //   4. One Euro Filter: suaviza forte quando estável, solta quando o ritmo muda
 //   5. detecção de parada à parte: abaixo do limite por N leituras = parado na hora
 
-const APP_VERSION = "v13"; // mudar junto com CACHE no sw.js
+const APP_VERSION = "v14"; // mudar junto com CACHE no sw.js
 
 // ---- Parâmetros ajustáveis ----
 const MEDIAN_N = 5;             // amostras da mediana (anti-pico)
@@ -252,20 +252,36 @@ function stopRun() {
 $("btn-start").addEventListener("click", startRun);
 setInterval(() => { if (watchId != null) render(); }, 1000);
 
-// Brilho liga/desliga pelo menu de diagnóstico. A escolha fica salva neste aparelho.
+// Opções do menu de diagnóstico. A escolha fica salva neste aparelho.
+// Padrão: brilho desligado e vermelho cru de display.
+// Chaves "glow2"/"red" novas: a antiga "glow" ficou salva como ligada em todo aparelho que abriu o app.
+function savePref(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* sem storage: vale só nesta sessão */ }
+}
+function loadPref(key, fallback) {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+
 function setGlow(on) {
   document.body.classList.toggle("no-glow", !on);
   $("btn-glow").textContent = `brilho: ${on ? "ligado" : "desligado"}`;
-  try { localStorage.setItem("glow", on ? "1" : "0"); } catch { /* sem storage: vale só nesta sessão */ }
+  savePref("glow2", on ? "1" : "0");
 }
-let glowPref = "1";
-try { glowPref = localStorage.getItem("glow") ?? "1"; } catch { /* usa o padrão */ }
-setGlow(glowPref === "1");
+function setBrandRed(on) {
+  document.body.classList.toggle("brand-red", on);
+  $("btn-red").textContent = `vermelho: ${on ? "marca" : "display"}`;
+  savePref("red", on ? "brand" : "display");
+}
+setGlow(loadPref("glow2", "0") === "1");
+setBrandRed(loadPref("red", "display") === "brand");
 
-// Toques no botão não contam como toque duplo nem toque longo da tela
-$("btn-glow").addEventListener("pointerdown", (e) => e.stopPropagation());
-$("btn-glow").addEventListener("pointerup", (e) => e.stopPropagation());
+// Toques nos botões não contam como toque duplo nem toque longo da tela
+for (const id of ["btn-glow", "btn-red"]) {
+  $(id).addEventListener("pointerdown", (e) => e.stopPropagation());
+  $(id).addEventListener("pointerup", (e) => e.stopPropagation());
+}
 $("btn-glow").addEventListener("click", () => setGlow(document.body.classList.contains("no-glow")));
+$("btn-red").addEventListener("click", () => setBrandRed(!document.body.classList.contains("brand-red")));
 
 // Toque duplo: painel de diagnóstico. Toque longo: encerrar.
 let lastTap = 0;

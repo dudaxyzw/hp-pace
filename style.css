@@ -6,9 +6,11 @@
   --accent-dark: #b21f3e; /* vermelho fechado Michelob (reserva para a fase visual) */
   --navy: #0a2240;        /* azul aproximado da Michelob Ultra: confirmar no guideline */
   --muted: #777;
-  --ghost: rgba(220, 29, 56, 0.12); /* segmentos apagados: mesmo tom do aceso, 12% */
+  /* Vermelho do display (PACE, número, /KM): LED cru de relógio digital, mais forte que o da marca */
+  --display: #ff2020;
+  --ghost: rgba(255, 32, 32, 0.12); /* segmentos apagados: mesmo tom do aceso, 12% */
   /* Brilho leve de display aceso. Para desligar: --glow: none; */
-  --glow: 0 0 0.04em rgba(220, 29, 56, 1), 0 0 0.25em rgba(220, 29, 56, 0.5), 0 0 0.6em rgba(220, 29, 56, 0.25);
+  --glow: 0 0 0.04em rgba(255, 32, 32, 1), 0 0 0.25em rgba(255, 32, 32, 0.5), 0 0 0.6em rgba(255, 32, 32, 0.25);
 }
 
 @font-face {
@@ -119,7 +121,7 @@ html, body {
   inset: 0;
   color: var(--ghost);
 }
-#pace { position: relative; color: var(--accent); text-shadow: var(--glow); }
+#pace { position: relative; color: var(--display); text-shadow: var(--glow); }
 
 /* Rótulos no estilo Strava: PACE e /KM no mesmo tamanho, abaixo do número */
 .label,
@@ -128,7 +130,7 @@ html, body {
   font-weight: 600;
   letter-spacing: 0.3em;
   margin-right: -0.3em;
-  color: var(--accent);
+  color: var(--display);
   text-shadow: var(--glow);
 }
 .label { margin-bottom: 3vh; }
@@ -183,7 +185,14 @@ html, body {
   background: var(--accent);
 }
 
-/* Brilho desligado pelo menu de diagnóstico */
+/* Display no vermelho da marca, pelo menu de diagnóstico */
+body.brand-red {
+  --display: var(--accent);
+  --ghost: rgba(220, 29, 56, 0.12);
+  --glow: 0 0 0.04em rgba(220, 29, 56, 1), 0 0 0.25em rgba(220, 29, 56, 0.5), 0 0 0.6em rgba(220, 29, 56, 0.25);
+}
+
+/* Brilho desligado pelo menu de diagnóstico (vem depois do brand-red para valer nos dois vermelhos) */
 body.no-glow { --glow: none; }
 
 #diag {
@@ -199,7 +208,7 @@ body.no-glow { --glow: none; }
 #diag pre { font: inherit; }
 .diag-btn {
   font: inherit;
-  margin-bottom: 10px;
+  margin: 0 8px 10px 0;
   padding: 6px 10px;
   border: 1px solid #0f0;
   border-radius: 4px;
