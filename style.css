@@ -11,6 +11,9 @@
   --ghost: rgba(255, 32, 32, 0.12); /* segmentos apagados: mesmo tom do aceso, 12% */
   /* Brilho leve de display aceso. Para desligar: --glow: none; */
   --glow: 0 0 0.04em rgba(255, 32, 32, 1), 0 0 0.25em rgba(255, 32, 32, 0.5), 0 0 0.6em rgba(255, 32, 32, 0.25);
+  /* Mesmo brilho para a tira (SVG não aceita text-shadow) */
+  --glow-filter: drop-shadow(0 0 0.3vh rgba(255, 32, 32, 1)) drop-shadow(0 0 1.5vh rgba(255, 32, 32, 0.5)) drop-shadow(0 0 3.5vh rgba(255, 32, 32, 0.25));
+  --tira: var(--display);
 }
 
 @font-face {
@@ -142,6 +145,9 @@ html, body {
 .tira {
   height: 22vh;
   width: auto;
+  aspect-ratio: 33 / 88;
+  color: var(--tira);
+  filter: var(--glow-filter);
 }
 
 .distance {
@@ -188,12 +194,14 @@ html, body {
 /* Display no vermelho da marca, pelo menu de diagnóstico */
 body.brand-red {
   --display: var(--accent);
+  --tira: #ce0e2d; /* cor exata do SVG oficial da tira */
   --ghost: rgba(220, 29, 56, 0.12);
   --glow: 0 0 0.04em rgba(220, 29, 56, 1), 0 0 0.25em rgba(220, 29, 56, 0.5), 0 0 0.6em rgba(220, 29, 56, 0.25);
+  --glow-filter: drop-shadow(0 0 0.3vh rgba(206, 14, 45, 1)) drop-shadow(0 0 1.5vh rgba(206, 14, 45, 0.5)) drop-shadow(0 0 3.5vh rgba(206, 14, 45, 0.25));
 }
 
 /* Brilho desligado pelo menu de diagnóstico (vem depois do brand-red para valer nos dois vermelhos) */
-body.no-glow { --glow: none; }
+body.no-glow { --glow: none; --glow-filter: none; }
 
 #diag {
   position: absolute;

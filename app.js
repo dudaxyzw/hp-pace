@@ -6,8 +6,14 @@
 //   3. mediana das últimas amostras: tira picos isolados sem atrasar mudança real
 //   4. One Euro Filter: suaviza forte quando estável, solta quando o ritmo muda
 //   5. detecção de parada à parte: abaixo do limite por N leituras = parado na hora
+//
+// Com "GPS + sensores" (padrão), o acelerômetro ajuda em duas coisas:
+//   - parada: tablet sem balanço por ~1,5 s = parado na hora, sem esperar o GPS
+//   - falha de sinal: o app aprende a passada (velocidade GPS ÷ cadência) e, sem GPS,
+//     estima o pace pela cadência em vez de só segurar o último valor
+// "Só GPS" é a medição original, sem nada disso.
 
-const APP_VERSION = "v14"; // mudar junto com CACHE no sw.js
+const APP_VERSION = "v15"; // mudar junto com CACHE no sw.js
 
 // ---- Parâmetros ajustáveis ----
 const MEDIAN_N = 5;             // amostras da mediana (anti-pico)
@@ -23,6 +29,17 @@ const SIGNAL_GAP_MS = 3000;     // sem leitura boa há mais que isso = falha de 
 const HOLD_MS = 10000;          // em falha de sinal, segura o último pace por até isso
 const LONG_PRESS_MS = 3000;     // toque longo para encerrar
 
+// Acelerômetro (tablet preso às costas, no colete)
+const STILL_STD = 0.6;          // m/s². Balanço abaixo disso = sem movimento
+const MOVE_STD = 1.0;           // m/s². Acima disso volta a contar como movimento (histerese)
+const STILL_CONFIRM_MS = 1500;  // tempo sem balanço para declarar parado
+const STEP_MIN_ACC = 1.2;       // m/s². Pico mínimo para contar um passo
+const STEP_MIN_MS = 250;        // intervalo mínimo entre passos (240 passos/min)
+const STEP_MAX_MS = 1500;       // sem passo há mais que isso = cadência inválida
+const CADENCE_N = 8;            // intervalos usados na mediana da cadência
+const STRIDE_MIN_UPDATES = 10;  // leituras de GPS com cadência antes de confiar na passada
+const STEP_FILL_MS = 60000;     // sem GPS, estima pelos passos por até isso
+
 const $ = (id) => document.getElementById(id);
 
 let watchId = null;
@@ -34,7 +51,19 @@ let euro = null;          // estado do One Euro Filter
 let totalDistance = 0;    // metros, só trechos em movimento
 let currentSpeed = null;  // m/s filtrado, null = parado ou sem dado
 let lastShownPace = "--:--";
+let paceSource = "-";     // de onde veio o pace na tela (diagnóstico)
+let useSensors = true;    // menu de diagnóstico: GPS + sensores ou só GPS (original)
 const stats = {};
+const motion = {};
+
+function resetMotion() {
+  Object.assign(motion, {
+    events: 0, mean: null, lp: null, variance: 0, std: 0, t: 0,
+    still: false, quietSince: null, armed: false, lastStep: 0, intervals: [],
+    stride: null, strideUpdates: 0,
+  });
+}
+resetMotion();
 
 function resetStats() {
   Object.assign(stats, {
@@ -81,6 +110,83 @@ function euroFilter(x, t) {
   return euro.x;
 }
 
+// ---------- Acelerômetro ----------
+
+// Usa o módulo da aceleração: não depende de como o tablet está virado no colete.
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!a || a.x == null) return;
+  const t = e.timeStamp;
+  const mag = Math.hypot(a.x, a.y, a.z);
+  motion.events++;
+  if (motion.mean == null) {
+    Object.assign(motion, { mean: mag, lp: mag, t });
+    return;
+  }
+  const dt = Math.min(Math.max((t - motion.t) / 1000, 0.001), 0.2);
+  motion.t = t;
+  motion.mean += smoothingFactor(dt, 0.5) * (mag - motion.mean);  // gravidade + desvio lento
+  motion.lp += smoothingFactor(dt, 5) * (mag - motion.lp);        // tira tremida fina
+  const y = motion.lp - motion.mean;
+  motion.variance += smoothingFactor(dt, 0.5) * (y * y - motion.variance);
+  motion.std = Math.sqrt(motion.variance);
+
+  // Parado: balanço baixo por STILL_CONFIRM_MS. Volta a mover só acima de MOVE_STD.
+  if (motion.std < STILL_STD) {
+    motion.quietSince ??= t;
+    if (t - motion.quietSince >= STILL_CONFIRM_MS) motion.still = true;
+  } else {
+    motion.quietSince = null;
+    if (motion.std > MOVE_STD) motion.still = false;
+  }
+
+  // Passo: pico acima do limite depois de passar pelo zero
+  if (y < 0) motion.armed = true;
+  if (motion.armed && y > Math.max(STEP_MIN_ACC, 0.6 * motion.std) && t - motion.lastStep > STEP_MIN_MS) {
+    const interval = t - motion.lastStep;
+    if (motion.lastStep && interval < STEP_MAX_MS) {
+      motion.intervals.push(interval);
+      if (motion.intervals.length > CADENCE_N) motion.intervals.shift();
+    }
+    motion.lastStep = t;
+    motion.armed = false;
+  }
+}
+
+function motionActive() {
+  return motion.events > 0 && performance.now() - motion.t < 1000;
+}
+
+// Passos por minuto, ou null se não está dando passos agora
+function cadence() {
+  if (!motionActive() || motion.still) return null;
+  if (performance.now() - motion.lastStep > STEP_MAX_MS || motion.intervals.length < 4) return null;
+  return 60000 / median(motion.intervals);
+}
+
+// Velocidade estimada pelos passos (m/s), ou null se ainda não aprendeu a passada
+function stepSpeed() {
+  const c = cadence();
+  if (c == null || motion.strideUpdates < STRIDE_MIN_UPDATES) return null;
+  return (c / 60) * motion.stride;
+}
+
+// Aprende a passada enquanto o GPS está bom. Média móvel lenta, limitada a valores plausíveis.
+function learnStride(speed) {
+  const c = cadence();
+  if (c == null || speed == null) return;
+  const stride = (speed * 60) / c;
+  if (stride < 0.4 || stride > 2.2) return;
+  motion.stride = motion.stride == null ? stride : motion.stride + 0.1 * (stride - motion.stride);
+  motion.strideUpdates++;
+}
+
+function sensorStill() {
+  return useSensors && motionActive() && motion.still;
+}
+
+// ---------- GPS ----------
+
 function onPosition(pos) {
   const c = pos.coords;
   const fix = { t: pos.timestamp, lat: c.latitude, lon: c.longitude, acc: c.accuracy, speed: c.speed };
@@ -121,7 +227,7 @@ function onPosition(pos) {
   const recent = samples.slice(-STOP_CONFIRM);
   const nowStopped = recent.length === STOP_CONFIRM && recent.every((s) => s < STOP_SPEED_MS);
 
-  if (nowStopped || med < STOP_SPEED_MS) {
+  if (nowStopped || med < STOP_SPEED_MS || sensorStill()) {
     stopped = true;
     currentSpeed = null;
     euro = null; // ao voltar a correr, o filtro começa do ritmo novo, sem rampa desde zero
@@ -131,6 +237,7 @@ function onPosition(pos) {
   stopped = false;
   currentSpeed = euroFilter(med, fix.t);
   totalDistance += segment;
+  learnStride(currentSpeed);
 }
 
 function onPositionError(err) {
@@ -157,13 +264,24 @@ function render() {
   const lost = !!lastAccepted && sinceGood > HOLD_MS;
 
   // A retenção vale só para falha de sinal. Parada real aparece na hora.
+  // Com sensores: acelerômetro parado zera na hora; sem GPS, estima pelos passos.
+  const steps = useSensors ? stepSpeed() : null;
   let holding = false;
-  if (signalOk) {
+  if (lastAccepted && sensorStill()) {
+    lastShownPace = "--:--";
+    paceSource = "parado (acelerômetro)";
+  } else if (signalOk) {
     lastShownPace = formatPace(currentSpeed);
+    paceSource = "gps";
+  } else if (lastAccepted && steps != null && sinceGood <= STEP_FILL_MS) {
+    lastShownPace = formatPace(steps);
+    paceSource = "passos";
   } else if (!lastAccepted || lost) {
     lastShownPace = "--:--";
+    paceSource = "-";
   } else {
     holding = true;
+    paceSource = "segurando";
   }
   $("pace").textContent = lastShownPace;
   // Segmentos apagados no mesmo formato do número (8:88 ou 88:88), para alinhar dígito a dígito
@@ -189,7 +307,12 @@ function render() {
       `mediana km/h:     ${kmh(stats.median)}`,
       `filtrada km/h:    ${kmh(currentSpeed)}`,
       `parado:           ${stopped ? "sim" : "não"}`,
-      `segurando:        ${holding ? "sim" : "não"}`,
+      `pace na tela:     ${paceSource}`,
+      `acelerômetro:     ${motionActive() ? "ativo" : "sem dados"}`,
+      `balanço m/s²:     ${motionActive() ? motion.std.toFixed(2) : "—"}${motion.still ? " (parado)" : ""}`,
+      `cadência ppm:     ${cadence() == null ? "—" : cadence().toFixed(0)}`,
+      `passada m:        ${motion.stride == null ? "—" : `${motion.stride.toFixed(2)} (${motion.strideUpdates})`}`,
+      `km/h pelos passos: ${kmh(stepSpeed())}`,
       `última leitura:   ${stats.lastFixAt ? ((Date.now() - stats.lastFixAt) / 1000).toFixed(0) + " s atrás" : "—"}`,
       `wake lock:        ${wakeLock ? "ativo" : "inativo"}`,
       stats.lastError ? `erro: ${stats.lastError}` : "",
@@ -215,6 +338,10 @@ async function startRun() {
     $("start-msg").textContent = "Este navegador não tem GPS disponível.";
     return;
   }
+  // iPhone/iPad pedem permissão para o acelerômetro; no Android não precisa
+  try {
+    if (typeof DeviceMotionEvent?.requestPermission === "function") await DeviceMotionEvent.requestPermission();
+  } catch { /* sem permissão: segue só com GPS */ }
   try {
     await document.documentElement.requestFullscreen();
     await screen.orientation.lock("portrait");
@@ -228,7 +355,10 @@ async function startRun() {
   totalDistance = 0;
   currentSpeed = null;
   lastShownPace = "--:--";
+  paceSource = "-";
   resetStats();
+  resetMotion();
+  window.addEventListener("devicemotion", onMotion);
 
   watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
     enableHighAccuracy: true,
@@ -243,6 +373,7 @@ async function startRun() {
 function stopRun() {
   if (watchId != null) navigator.geolocation.clearWatch(watchId);
   watchId = null;
+  window.removeEventListener("devicemotion", onMotion);
   if (wakeLock) wakeLock.release();
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   $("run").classList.add("hidden");
@@ -272,16 +403,23 @@ function setBrandRed(on) {
   $("btn-red").textContent = `vermelho: ${on ? "marca" : "display"}`;
   savePref("red", on ? "brand" : "display");
 }
+function setSensors(on) {
+  useSensors = on;
+  $("btn-measure").textContent = `medição: ${on ? "GPS + sensores" : "só GPS (original)"}`;
+  savePref("measure", on ? "sensors" : "gps");
+}
 setGlow(loadPref("glow2", "0") === "1");
 setBrandRed(loadPref("red", "display") === "brand");
+setSensors(loadPref("measure", "sensors") === "sensors");
 
 // Toques nos botões não contam como toque duplo nem toque longo da tela
-for (const id of ["btn-glow", "btn-red"]) {
+for (const id of ["btn-glow", "btn-red", "btn-measure"]) {
   $(id).addEventListener("pointerdown", (e) => e.stopPropagation());
   $(id).addEventListener("pointerup", (e) => e.stopPropagation());
 }
 $("btn-glow").addEventListener("click", () => setGlow(document.body.classList.contains("no-glow")));
 $("btn-red").addEventListener("click", () => setBrandRed(!document.body.classList.contains("brand-red")));
+$("btn-measure").addEventListener("click", () => { setSensors(!useSensors); render(); });
 
 // Toque duplo: painel de diagnóstico. Toque longo: encerrar.
 let lastTap = 0;

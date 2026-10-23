@@ -1,6 +1,6 @@
 // Guarda o app inteiro em cache para funcionar sem internet.
 // A cada atualização do app, mude a versão aqui e em APP_VERSION no app.js.
-const CACHE = "human-pace-v14";
+const CACHE = "human-pace-v15";
 const FILES = [
   "./",
   "index.html",
@@ -10,7 +10,6 @@ const FILES = [
   "fonts/DSEG7Classic-Bold.woff2",
   "fonts/barlow-400.woff2",
   "fonts/barlow-600.woff2",
-  "assets/tira.svg",
   "icons/icon-192.png",
   "icons/icon-512.png",
 ];

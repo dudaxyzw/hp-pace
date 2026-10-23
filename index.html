@@ -31,7 +31,8 @@
       </div>
       <div class="unit">/KM</div>
     </div>
-    <img class="tira" src="assets/tira.svg" alt="">
+    <!-- Tira oficial da marca (mesmo desenho de assets/tira.svg), em linha para mudar de cor e brilhar com o display -->
+    <svg class="tira" viewBox="0 0 33 88" aria-hidden="true"><path d="M0 0V87.88L16.37 76.92L32.75 87.88V0H0Z" fill="currentColor"/></svg>
 
     <div class="distance"><span id="distance">0.00</span> KM</div>
 
@@ -41,6 +42,7 @@
     <div id="diag" class="hidden">
       <button id="btn-glow" class="diag-btn"></button>
       <button id="btn-red" class="diag-btn"></button>
+      <button id="btn-measure" class="diag-btn"></button>
       <pre id="diag-text"></pre>
     </div>
   </section>
