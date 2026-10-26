@@ -6,6 +6,9 @@
 //   3. mediana das últimas amostras: tira picos isolados sem atrasar mudança real
 //   4. One Euro Filter: suaviza forte quando estável, solta quando o ritmo muda
 //   5. detecção de parada à parte: abaixo do limite por N leituras = parado na hora
+//   6. na tela, pace em degraus de 5 s com histerese: só troca de degrau quando o ritmo
+//      passa do meio do caminho com folga, para o número não ficar pulando na divisa
+//   7. o número muda no máximo a cada 5 s; parar e voltar a correr aparecem na hora
 //
 // Com "GPS + sensores" (padrão), o acelerômetro ajuda em duas coisas:
 //   - parada: tablet sem balanço por ~1,5 s = parado na hora, sem esperar o GPS
@@ -13,7 +16,7 @@
 //     estima o pace pela cadência em vez de só segurar o último valor
 // "Só GPS" é a medição original, sem nada disso.
 
-const APP_VERSION = "v15"; // mudar junto com CACHE no sw.js
+const APP_VERSION = "v16"; // mudar junto com CACHE no sw.js
 
 // ---- Parâmetros ajustáveis ----
 const MEDIAN_N = 5;             // amostras da mediana (anti-pico)
@@ -28,6 +31,9 @@ const MAX_SPEED_MS = 9;         // ~32 km/h: acima disso é salto de GPS, não c
 const SIGNAL_GAP_MS = 3000;     // sem leitura boa há mais que isso = falha de sinal
 const HOLD_MS = 10000;          // em falha de sinal, segura o último pace por até isso
 const LONG_PRESS_MS = 3000;     // toque longo para encerrar
+const PACE_STEP_S = 5;          // pace na tela de 5 em 5 s (último dígito 0 ou 5)
+const PACE_HYST_S = 2;          // s além do meio do degrau para trocar de degrau
+const PACE_REFRESH_MS = 5000;   // troca o número na tela no máximo a cada isso
 
 // Acelerômetro (tablet preso às costas, no colete)
 const STILL_STD = 0.6;          // m/s². Balanço abaixo disso = sem movimento
@@ -51,6 +57,8 @@ let euro = null;          // estado do One Euro Filter
 let totalDistance = 0;    // metros, só trechos em movimento
 let currentSpeed = null;  // m/s filtrado, null = parado ou sem dado
 let lastShownPace = "--:--";
+let paceBucket = null;    // degrau do pace na tela, em s/km; null = sem pace
+let paceShownAt = 0;      // quando o número na tela foi trocado pela última vez
 let paceSource = "-";     // de onde veio o pace na tela (diagnóstico)
 let useSensors = true;    // menu de diagnóstico: GPS + sensores ou só GPS (original)
 const stats = {};
@@ -250,12 +258,31 @@ function onPositionError(err) {
 
 // ---------- Tela ----------
 
+// O filtro segue com toda a precisão; o arredondamento é só na tela.
+// Degrau atual vale enquanto o pace real estiver a até 2,5 + 2 s dele (ex.: 5:10 de 5:06 a 5:14).
+// Parada zera o degrau, então a volta a correr aparece direto no degrau certo.
 function formatPace(speed) {
-  if (speed == null || speed < STOP_SPEED_MS) return "--:--";
-  const secPerKm = Math.round(1000 / speed);
+  if (speed == null || speed < STOP_SPEED_MS) {
+    paceBucket = null;
+    return "--:--";
+  }
+  const raw = 1000 / speed;
+  if (paceBucket == null || Math.abs(raw - paceBucket) > PACE_STEP_S / 2 + PACE_HYST_S) {
+    paceBucket = Math.round(raw / PACE_STEP_S) * PACE_STEP_S;
+  }
+  const secPerKm = paceBucket;
   const m = Math.floor(secPerKm / 60);
   const s = String(secPerKm % 60).padStart(2, "0");
   return `${m}:${s}`;
+}
+
+// Pace correndo troca no máximo a cada PACE_REFRESH_MS. Entrar ou sair de "--:--" é na hora.
+function showPace(pace) {
+  const now = Date.now();
+  if (pace === "--:--" || lastShownPace === "--:--" || now - paceShownAt >= PACE_REFRESH_MS) {
+    lastShownPace = pace;
+    paceShownAt = now;
+  }
 }
 
 function render() {
@@ -268,16 +295,16 @@ function render() {
   const steps = useSensors ? stepSpeed() : null;
   let holding = false;
   if (lastAccepted && sensorStill()) {
-    lastShownPace = "--:--";
+    showPace(formatPace(null));
     paceSource = "parado (acelerômetro)";
   } else if (signalOk) {
-    lastShownPace = formatPace(currentSpeed);
+    showPace(formatPace(currentSpeed));
     paceSource = "gps";
   } else if (lastAccepted && steps != null && sinceGood <= STEP_FILL_MS) {
-    lastShownPace = formatPace(steps);
+    showPace(formatPace(steps));
     paceSource = "passos";
   } else if (!lastAccepted || lost) {
-    lastShownPace = "--:--";
+    showPace(formatPace(null));
     paceSource = "-";
   } else {
     holding = true;
@@ -306,6 +333,7 @@ function render() {
       `amostra km/h:     ${kmh(stats.lastSample)}`,
       `mediana km/h:     ${kmh(stats.median)}`,
       `filtrada km/h:    ${kmh(currentSpeed)}`,
+      `pace exato:       ${currentSpeed == null ? "—" : (1000 / currentSpeed).toFixed(1) + " s/km"}`,
       `parado:           ${stopped ? "sim" : "não"}`,
       `pace na tela:     ${paceSource}`,
       `acelerômetro:     ${motionActive() ? "ativo" : "sem dados"}`,
@@ -355,6 +383,8 @@ async function startRun() {
   totalDistance = 0;
   currentSpeed = null;
   lastShownPace = "--:--";
+  paceBucket = null;
+  paceShownAt = 0;
   paceSource = "-";
   resetStats();
   resetMotion();
