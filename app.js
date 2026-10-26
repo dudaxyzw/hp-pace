@@ -12,11 +12,11 @@
 //
 // Com "GPS + sensores" (padrão), o acelerômetro ajuda em duas coisas:
 //   - parada: tablet sem balanço por ~1,5 s = parado na hora, sem esperar o GPS
-//   - falha de sinal: o app aprende a passada (velocidade GPS ÷ cadência) e, sem GPS,
-//     estima o pace pela cadência em vez de só segurar o último valor
+//   - falha de sinal: enquanto o acelerômetro detecta passos, segura o último pace
+//     do GPS por mais tempo (não estima um pace novo)
 // "Só GPS" é a medição original, sem nada disso.
 
-const APP_VERSION = "v16"; // mudar junto com CACHE no sw.js
+const APP_VERSION = "v17"; // mudar junto com CACHE no sw.js
 
 // ---- Parâmetros ajustáveis ----
 const MEDIAN_N = 5;             // amostras da mediana (anti-pico)
@@ -29,7 +29,7 @@ const STOP_CONFIRM = 2;         // leituras seguidas abaixo do limite para mostr
 const MAX_ACCURACY_M = 25;      // descarta leituras com precisão pior que isso
 const MAX_SPEED_MS = 9;         // ~32 km/h: acima disso é salto de GPS, não corredor
 const SIGNAL_GAP_MS = 3000;     // sem leitura boa há mais que isso = falha de sinal
-const HOLD_MS = 10000;          // em falha de sinal, segura o último pace por até isso
+const HOLD_MS = 5000;           // em falha de sinal, segura o último pace por até isso
 const LONG_PRESS_MS = 3000;     // toque longo para encerrar
 const PACE_STEP_S = 5;          // pace na tela de 5 em 5 s (último dígito 0 ou 5)
 const PACE_HYST_S = 2;          // s além do meio do degrau para trocar de degrau
@@ -44,7 +44,7 @@ const STEP_MIN_MS = 250;        // intervalo mínimo entre passos (240 passos/mi
 const STEP_MAX_MS = 1500;       // sem passo há mais que isso = cadência inválida
 const CADENCE_N = 8;            // intervalos usados na mediana da cadência
 const STRIDE_MIN_UPDATES = 10;  // leituras de GPS com cadência antes de confiar na passada
-const STEP_FILL_MS = 60000;     // sem GPS, estima pelos passos por até isso
+const STEP_FILL_MS = 60000;     // sem GPS, com passos, segura o pace por até isso
 
 const $ = (id) => document.getElementById(id);
 
@@ -291,8 +291,9 @@ function render() {
   const lost = !!lastAccepted && sinceGood > HOLD_MS;
 
   // A retenção vale só para falha de sinal. Parada real aparece na hora.
-  // Com sensores: acelerômetro parado zera na hora; sem GPS, estima pelos passos.
-  const steps = useSensors ? stepSpeed() : null;
+  // Com sensores: acelerômetro parado zera na hora; sem GPS, enquanto há passos,
+  // segura o último pace por até STEP_FILL_MS em vez de só HOLD_MS.
+  const stepping = useSensors && cadence() != null;
   let holding = false;
   if (lastAccepted && sensorStill()) {
     showPace(formatPace(null));
@@ -300,9 +301,9 @@ function render() {
   } else if (signalOk) {
     showPace(formatPace(currentSpeed));
     paceSource = "gps";
-  } else if (lastAccepted && steps != null && sinceGood <= STEP_FILL_MS) {
-    showPace(formatPace(steps));
-    paceSource = "passos";
+  } else if (lastAccepted && stepping && sinceGood <= STEP_FILL_MS) {
+    holding = true;
+    paceSource = "segurando (passos)";
   } else if (!lastAccepted || lost) {
     showPace(formatPace(null));
     paceSource = "-";
