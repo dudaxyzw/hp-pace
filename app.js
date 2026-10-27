@@ -20,7 +20,7 @@
 // Sai no primeiro movimento. Não mexe na medição: só lê o que está na tela e o acelerômetro.
 // A posição do vídeo segue o relógio (hora do servidor), então os tablets tocam alinhados.
 
-const APP_VERSION = "v18"; // mudar junto com CACHE no sw.js
+const APP_VERSION = "v19"; // mudar junto com CACHE no sw.js
 
 // ---- Parâmetros ajustáveis ----
 const MEDIAN_N = 5;             // amostras da mediana (anti-pico)
@@ -44,6 +44,7 @@ const IDLE_AFTER_MS = 20000;    // "--:--" na tela por isso = entra na vinheta
 const VIDEO_SYNC_MS = 500;      // confere a posição do vídeo a cada isso
 const VIDEO_SEEK_S = 0.5;       // desvio maior que isso: pula; menor: acelera ou freia de leve
 const VIDEO_SEEK_LEAD_S = 0.15; // pula um pouco à frente, porque o pulo leva um instante
+const VIDEO_FADE_MS = 600;      // mesmo tempo do transition de #vinheta no style.css
 const CLOCK_URL = "https://www.cloudflare.com/cdn-cgi/trace"; // responde "ts=<segundos>", com CORS
 const CLOCK_SAMPLES = 8;        // consultas por sincronia
 const CLOCK_RESYNC_MS = 10 * 60000;
@@ -339,16 +340,17 @@ function videoTarget() {
   return (((syncedNow() % d) + d) % d) / 1000;
 }
 
+// Entra e sai com fade (CSS). Ao sair, só pausa depois que o fade termina.
 function setIdle(on) {
   idle = on;
   idleBySensor = on && sensorStill();
-  video.classList.toggle("hidden", !on);
+  video.classList.toggle("on", on);
   if (on) {
     video.playbackRate = 1;
     video.currentTime = (videoTarget() + VIDEO_SEEK_LEAD_S) % video.duration;
     video.play().catch(() => {});
   } else {
-    video.pause();
+    setTimeout(() => { if (!idle) video.pause(); }, VIDEO_FADE_MS);
     blankSince = null; // depois de sair, conta os 20 s de novo
     videoDrift = null;
   }
@@ -368,6 +370,7 @@ function updateIdle() {
 // Desvio pequeno: acelera ou freia até 5%, sem o olho perceber. Grande: pula.
 function syncVideo() {
   if (!idle || !videoReady()) return;
+  if (video.paused) video.play().catch(() => {}); // o navegador pausa ao apagar a tela
   const d = video.duration;
   let drift = video.currentTime - videoTarget();
   if (drift > d / 2) drift -= d;
@@ -633,8 +636,23 @@ $("run").addEventListener("pointerdown", () => {
   }, LONG_PRESS_MS);
 });
 
+// Qualquer toque volta para o fullscreen, se algo tirou o app dele (precisa ser num toque)
+function restoreFullscreen() {
+  if (document.fullscreenElement) return;
+  document.documentElement.requestFullscreen()
+    .then(() => screen.orientation.lock("portrait"))
+    .catch(() => {});
+}
+
 $("run").addEventListener("pointerup", () => {
   cancelPress();
+  restoreFullscreen();
+  // Toque na vinheta: sai dela (e não conta como primeiro toque do toque duplo)
+  if (idle) {
+    setIdle(false);
+    lastTap = 0;
+    return;
+  }
   const now = Date.now();
   if (now - lastTap < 350) {
     $("diag").classList.toggle("hidden");
