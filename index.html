@@ -38,11 +38,16 @@
 
     <div id="stop-progress"></div>
 
+    <!-- Vinheta do standby: cobre a tela quando o tablet fica parado (ver app.js) -->
+    <video id="vinheta" class="hidden" muted playsinline loop preload="auto"></video>
+
     <!-- Painel de diagnóstico: toque duplo para abrir/fechar -->
     <div id="diag" class="hidden">
       <button id="btn-glow" class="diag-btn"></button>
       <button id="btn-red" class="diag-btn"></button>
       <button id="btn-measure" class="diag-btn"></button>
+      <button id="btn-vinheta" class="diag-btn"></button>
+      <div id="diag-clock" class="diag-clock"></div>
       <pre id="diag-text"></pre>
     </div>
   </section>

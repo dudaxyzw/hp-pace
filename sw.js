@@ -1,6 +1,6 @@
 // Guarda o app inteiro em cache para funcionar sem internet.
 // A cada atualização do app, mude a versão aqui e em APP_VERSION no app.js.
-const CACHE = "human-pace-v17";
+const CACHE = "human-pace-v18";
 const FILES = [
   "./",
   "index.html",
@@ -12,6 +12,7 @@ const FILES = [
   "fonts/barlow-600.woff2",
   "icons/icon-192.png",
   "icons/icon-512.png",
+  "assets/vinheta.mp4",
 ];
 
 // cache: "reload" ignora o cache HTTP do navegador, senão a versão nova pode salvar arquivos antigos

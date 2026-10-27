@@ -15,8 +15,12 @@
 //   - falha de sinal: enquanto o acelerômetro detecta passos, segura o último pace
 //     do GPS por mais tempo (não estima um pace novo)
 // "Só GPS" é a medição original, sem nada disso.
+//
+// Vinheta (standby): com "--:--" na tela por IDLE_AFTER_MS, toca assets/vinheta.mp4 em loop.
+// Sai no primeiro movimento. Não mexe na medição: só lê o que está na tela e o acelerômetro.
+// A posição do vídeo segue o relógio (hora do servidor), então os tablets tocam alinhados.
 
-const APP_VERSION = "v17"; // mudar junto com CACHE no sw.js
+const APP_VERSION = "v18"; // mudar junto com CACHE no sw.js
 
 // ---- Parâmetros ajustáveis ----
 const MEDIAN_N = 5;             // amostras da mediana (anti-pico)
@@ -34,6 +38,15 @@ const LONG_PRESS_MS = 3000;     // toque longo para encerrar
 const PACE_STEP_S = 5;          // pace na tela de 5 em 5 s (último dígito 0 ou 5)
 const PACE_HYST_S = 2;          // s além do meio do degrau para trocar de degrau
 const PACE_REFRESH_MS = 5000;   // troca o número na tela no máximo a cada isso
+
+// Vinheta e relógio
+const IDLE_AFTER_MS = 20000;    // "--:--" na tela por isso = entra na vinheta
+const VIDEO_SYNC_MS = 500;      // confere a posição do vídeo a cada isso
+const VIDEO_SEEK_S = 0.5;       // desvio maior que isso: pula; menor: acelera ou freia de leve
+const VIDEO_SEEK_LEAD_S = 0.15; // pula um pouco à frente, porque o pulo leva um instante
+const CLOCK_URL = "https://www.cloudflare.com/cdn-cgi/trace"; // responde "ts=<segundos>", com CORS
+const CLOCK_SAMPLES = 8;        // consultas por sincronia
+const CLOCK_RESYNC_MS = 10 * 60000;
 
 // Acelerômetro (tablet preso às costas, no colete)
 const STILL_STD = 0.6;          // m/s². Balanço abaixo disso = sem movimento
@@ -61,6 +74,13 @@ let paceBucket = null;    // degrau do pace na tela, em s/km; null = sem pace
 let paceShownAt = 0;      // quando o número na tela foi trocado pela última vez
 let paceSource = "-";     // de onde veio o pace na tela (diagnóstico)
 let useSensors = true;    // menu de diagnóstico: GPS + sensores ou só GPS (original)
+let vinhetaOn = true;     // menu de diagnóstico: vinheta no standby
+let idle = false;         // vinheta tocando
+let idleBySensor = false; // entrou com o acelerômetro parado: sai quando ele voltar a mexer
+let blankSince = null;    // desde quando a tela mostra "--:--"
+let videoDrift = null;    // s, posição do vídeo menos a posição pelo relógio (diagnóstico)
+// Diferença entre o relógio do servidor e o do tablet. Sem sincronia, usa o do tablet.
+const clock = { offset: 0, error: null, at: 0 };
 const stats = {};
 const motion = {};
 
@@ -256,6 +276,111 @@ function onPositionError(err) {
   }
 }
 
+// ---------- Relógio ----------
+
+// O servidor só informa o segundo cheio. Cada consulta diz que, entre o envio e a resposta,
+// o relógio dele estava naquele segundo: isso limita a diferença a uma faixa. As próximas
+// consultas são marcadas para a virada de segundo cair no meio delas, e a faixa vai
+// encolhendo até perto do tempo de ida e volta da rede. Mesma fonte em todos os tablets.
+async function clockSample() {
+  const t0 = Date.now();
+  const text = await (await fetch(CLOCK_URL, { cache: "no-store" })).text();
+  const t1 = Date.now();
+  const ts = Number(/^ts=([\d.]+)$/m.exec(text)?.[1]);
+  if (!ts) throw new Error("resposta sem ts");
+  const s = Math.floor(ts) * 1000;
+  return { lo: s - t1, hi: s + 1000 - t0, rtt: t1 - t0 };
+}
+
+async function syncClock() {
+  try {
+    let lo = -Infinity, hi = Infinity, rtt = 200;
+    for (let i = 0; i < CLOCK_SAMPLES; i++) {
+      if (i > 0) {
+        const mid = (lo + hi) / 2;
+        const now = Date.now();
+        let wait = Math.ceil((now + mid) / 1000) * 1000 - mid - now - rtt / 2;
+        if (wait < 0) wait += 1000;
+        await new Promise((r) => setTimeout(r, wait));
+      }
+      const s = await clockSample();
+      rtt = s.rtt;
+      if (s.lo > hi || s.hi < lo) { lo = s.lo; hi = s.hi; }  // não bate com as anteriores: recomeça
+      else { lo = Math.max(lo, s.lo); hi = Math.min(hi, s.hi); }
+    }
+    Object.assign(clock, { offset: (lo + hi) / 2, error: (hi - lo) / 2, at: Date.now() });
+  } catch { /* sem rede: segue com a última sincronia, ou com o relógio do tablet */ }
+}
+
+function syncedNow() {
+  return Date.now() + clock.offset;
+}
+
+// ---------- Vinheta ----------
+
+const video = $("vinheta");
+
+// Carrega o vídeo inteiro na memória (vem do cache do app): pula para qualquer ponto sem rede
+async function loadVinheta() {
+  try {
+    const r = await fetch("assets/vinheta.mp4");
+    if (r.ok) video.src = URL.createObjectURL(await r.blob());
+  } catch { /* sem vídeo: o standby não entra */ }
+}
+
+function videoReady() {
+  return video.duration > 0 && Number.isFinite(video.duration);
+}
+
+// Onde o vídeo deveria estar agora: o ciclo começa em todo múltiplo da duração desde 1970,
+// então com 10 s de vídeo começa em x:00, x:10, x:20… em todos os tablets
+function videoTarget() {
+  const d = video.duration * 1000;
+  return (((syncedNow() % d) + d) % d) / 1000;
+}
+
+function setIdle(on) {
+  idle = on;
+  idleBySensor = on && sensorStill();
+  video.classList.toggle("hidden", !on);
+  if (on) {
+    video.playbackRate = 1;
+    video.currentTime = (videoTarget() + VIDEO_SEEK_LEAD_S) % video.duration;
+    video.play().catch(() => {});
+  } else {
+    video.pause();
+    blankSince = null; // depois de sair, conta os 20 s de novo
+    videoDrift = null;
+  }
+}
+
+function updateIdle() {
+  const blank = lastShownPace === "--:--";
+  if (!blank) blankSince = null;
+  else blankSince ??= Date.now();
+  if (idle) {
+    if (!blank || !vinhetaOn || (idleBySensor && !sensorStill())) setIdle(false);
+  } else if (vinhetaOn && videoReady() && blank && Date.now() - blankSince >= IDLE_AFTER_MS) {
+    setIdle(true);
+  }
+}
+
+// Desvio pequeno: acelera ou freia até 5%, sem o olho perceber. Grande: pula.
+function syncVideo() {
+  if (!idle || !videoReady()) return;
+  const d = video.duration;
+  let drift = video.currentTime - videoTarget();
+  if (drift > d / 2) drift -= d;
+  else if (drift < -d / 2) drift += d;
+  videoDrift = drift;
+  if (Math.abs(drift) > VIDEO_SEEK_S) {
+    video.playbackRate = 1;
+    video.currentTime = (videoTarget() + VIDEO_SEEK_LEAD_S) % d;
+  } else {
+    video.playbackRate = Math.abs(drift) < 0.02 ? 1 : Math.min(1.05, Math.max(0.95, 1 - drift / 2));
+  }
+}
+
 // ---------- Tela ----------
 
 // O filtro segue com toda a precisão; o arredondamento é só na tela.
@@ -344,6 +469,9 @@ function render() {
       `km/h pelos passos: ${kmh(stepSpeed())}`,
       `última leitura:   ${stats.lastFixAt ? ((Date.now() - stats.lastFixAt) / 1000).toFixed(0) + " s atrás" : "—"}`,
       `wake lock:        ${wakeLock ? "ativo" : "inativo"}`,
+      `relógio:          ${clock.at ? `${(clock.offset / 1000).toFixed(2)} s ±${(clock.error / 1000).toFixed(2)} (servidor)` : "do tablet (sem sincronia)"}`,
+      `vinheta:          ${!vinhetaOn ? "desligada" : !videoReady() ? "sem vídeo" : idle ? "tocando" : blankSince ? `em ${Math.max(0, Math.ceil((IDLE_AFTER_MS - (Date.now() - blankSince)) / 1000))} s` : "aguardando parada"}`,
+      `vinheta desvio:   ${videoDrift == null ? "—" : `${(videoDrift * 1000).toFixed(0)} ms`}`,
       stats.lastError ? `erro: ${stats.lastError}` : "",
     ].join("\n");
   }
@@ -387,6 +515,8 @@ async function startRun() {
   paceBucket = null;
   paceShownAt = 0;
   paceSource = "-";
+  blankSince = null;
+  if (Date.now() - clock.at > CLOCK_RESYNC_MS) syncClock();
   resetStats();
   resetMotion();
   window.addEventListener("devicemotion", onMotion);
@@ -405,6 +535,7 @@ function stopRun() {
   if (watchId != null) navigator.geolocation.clearWatch(watchId);
   watchId = null;
   window.removeEventListener("devicemotion", onMotion);
+  if (idle) setIdle(false);
   if (wakeLock) wakeLock.release();
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   $("run").classList.add("hidden");
@@ -413,6 +544,23 @@ function stopRun() {
 
 $("btn-start").addEventListener("click", startRun);
 setInterval(() => { if (watchId != null) render(); }, 1000);
+// Vinheta fora do render, mais rápido: sai no primeiro movimento e mantém o vídeo no ponto
+setInterval(() => {
+  if (watchId == null) return;
+  updateIdle();
+  syncVideo();
+}, VIDEO_SYNC_MS);
+setInterval(() => { if (watchId != null) syncClock(); }, CLOCK_RESYNC_MS);
+loadVinheta();
+
+// Relógio do menu de diagnóstico, na hora sincronizada: lado a lado, os tablets devem virar o segundo juntos
+function renderClock() {
+  const d = new Date(syncedNow());
+  const p = (n) => String(n).padStart(2, "0");
+  $("diag-clock").textContent = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${Math.floor(d.getMilliseconds() / 100)}`;
+}
+setInterval(() => { if (watchId != null && !$("diag").classList.contains("hidden")) renderClock(); }, 50);
+syncClock();
 
 // Opções do menu de diagnóstico. A escolha fica salva neste aparelho.
 // Padrão: brilho desligado e vermelho cru de display.
@@ -441,16 +589,24 @@ function setSensors(on) {
 }
 setGlow(loadPref("glow2", "0") === "1");
 setBrandRed(loadPref("red", "display") === "brand");
+function setVinheta(on) {
+  vinhetaOn = on;
+  $("btn-vinheta").textContent = `vinheta: ${on ? "ligada" : "desligada"}`;
+  savePref("vinheta", on ? "1" : "0");
+  if (!on && idle) setIdle(false);
+}
 setSensors(loadPref("measure", "sensors") === "sensors");
+setVinheta(loadPref("vinheta", "1") === "1");
 
 // Toques nos botões não contam como toque duplo nem toque longo da tela
-for (const id of ["btn-glow", "btn-red", "btn-measure"]) {
+for (const id of ["btn-glow", "btn-red", "btn-measure", "btn-vinheta"]) {
   $(id).addEventListener("pointerdown", (e) => e.stopPropagation());
   $(id).addEventListener("pointerup", (e) => e.stopPropagation());
 }
 $("btn-glow").addEventListener("click", () => setGlow(document.body.classList.contains("no-glow")));
 $("btn-red").addEventListener("click", () => setBrandRed(!document.body.classList.contains("brand-red")));
 $("btn-measure").addEventListener("click", () => { setSensors(!useSensors); render(); });
+$("btn-vinheta").addEventListener("click", () => { setVinheta(!vinhetaOn); render(); });
 
 // Toque duplo: painel de diagnóstico. Toque longo: encerrar.
 let lastTap = 0;

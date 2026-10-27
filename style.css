@@ -203,8 +203,20 @@ body.brand-red {
 /* Brilho desligado pelo menu de diagnóstico (vem depois do brand-red para valer nos dois vermelhos) */
 body.no-glow { --glow: none; --glow-filter: none; }
 
+/* Vinheta do standby, por cima da tela de corrida (o diagnóstico fica por cima dela) */
+#vinheta {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+  z-index: 1;
+}
+
 #diag {
   position: absolute;
+  z-index: 2;
   left: 3vw;
   top: 10vh;
   padding: 12px;
@@ -214,6 +226,10 @@ body.no-glow { --glow: none; --glow-filter: none; }
   border-radius: 6px;
 }
 #diag pre { font: inherit; }
+.diag-clock {
+  font: 44px/1.2 "DSEG7", monospace;
+  margin: 4px 0 10px;
+}
 .diag-btn {
   font: inherit;
   margin: 0 8px 10px 0;
